@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Neurons — CNS Observatory</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/" aria-label="Neurons 관측실"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 24V8L24 24V8"/><circle cx="8" cy="8" r="3"/><circle cx="24" cy="24" r="3"/></svg><span>NEURONS<small>CNS OBSERVATORY</small></span></a>
+  <nav aria-label="작업 공간"><button class="nav active" data-view="inspect">관측실</button><button class="nav" data-view="memory">학습 & 기억</button><button class="nav" data-view="modules">모듈</button><button class="nav" data-view="events">활동 기록</button></nav>
+  <div class="top-right"><span class="badge"><i></i> LOCAL</span><button id="aboutBtn" class="icon-button" aria-label="모델과 데이터 정보">ⓘ</button><span class="version">v0.1.0</span></div>
+</header>
+<main>
+  <section class="universe" aria-label="3D 뉴런 지도">
+    <canvas id="space" aria-label="MaleCNS 뉴런 3D 지도. 마우스로 회전하고 휠로 확대할 수 있습니다."></canvas>
+    <div id="loading" class="loading"><div class="loader-orbit"></div><b>신경계의 지도를 불러오는 중</b><span>MaleCNS v1.0 · 실제 연결 데이터</span></div>
+    <div class="scene-top">
+      <div class="scene-title"><span class="eyebrow">THE CONNECTED UNIVERSE</span><h1>신경계의 작은 우주<span>.</span></h1><p>하나의 뉴런에서, 연결된 전체로.</p></div>
+      <div class="dataset-label"><span class="tiny-dot"></span> MALE CNS <b>v1.0</b></div>
+    </div>
+    <div class="metrics">
+      <div><small>계산 뉴런</small><strong id="neuronCount">—</strong><span>개별 LIF 상태</span></div>
+      <div><small>시냅스 접촉</small><strong id="contactCount">—</strong><span>집계 연결에 보존된 개수</span></div>
+      <div><small>가중 연결</small><strong id="edgeCount">—</strong><span>전체 계산 그래프</span></div>
+      <div><small>최근 활성 뉴런</small><strong id="activeCount" class="mint">0</strong><span><i class="pulse-dot"></i> 시뮬레이션 관측값</span></div>
+    </div>
+    <div class="view-tools">
+      <div class="segmented" aria-label="영역 필터"><button class="active" data-filter="all">전체</button><button data-filter="visual">시각계</button><button data-filter="vnc">복측신경삭</button></div>
+      <div class="view-buttons"><button id="rotateBtn" title="자동 회전" aria-pressed="false">↻</button><button id="homeBtn" title="시점 초기화">⌖</button><button id="linksBtn" title="연결선 표시" aria-pressed="true">⌁</button></div>
+    </div>
+    <div class="legend glass"><span><i class="cyan"></i>중추 뇌</span><span><i class="blue"></i>시각계</span><span><i class="violet"></i>복측신경삭</span><span><i class="gold"></i>감각·운동 경로</span><div class="legend-rule"></div><span class="legend-note">밝기 = 최근 발화<br>선 = 뉴런 간 집계 연결</span><label class="check"><input id="missingToggle" type="checkbox">좌표 없는 뉴런도 펼치기</label></div>
+    <div id="unplacedLabel" class="unplaced hidden">위치 미제공 · 개념적 배치</div>
+    <div class="camera-help">드래그로 회전 <span>·</span> 휠로 확대 <span>·</span> 점을 눌러 뉴런 탐색</div>
+    <div class="scene-bottom glass">
+      <div class="transport"><button id="playBtn" class="primary"><span>▶</span> 시뮬레이션 실행</button><button id="stepBtn" class="outline" title="10 ms만 계산">+10 ms</button></div>
+      <div class="sim-clock"><small>SIMULATION TIME</small><strong id="simTime">0.000 <span>s</span></strong></div>
+      <button id="visualBtn" class="stimulate">✦ 시각계 시험 자극</button>
+    </div>
+    <div class="scene-footnote"><span id="renderCount">3D 좌표 로드 중</span><span id="frameCount">WebGL</span></div>
+  </section>
+
+  <aside class="dock">
+    <div class="dock-tabs"><button data-dock="inspect" class="active">탐색</button><button data-dock="chat">대화 <span class="dot" id="llmDot"></span></button></div>
+    <section id="inspectPanel" class="panel">
+      <div class="panel-heading"><span class="eyebrow">NEURON EXPLORER</span><h2>연결을 들여다보다</h2></div>
+      <div class="search-wrap"><span>⌕</span><input id="neuronSearch" type="search" placeholder="뉴런 ID 또는 세포 유형 검색" autocomplete="off" aria-label="뉴런 검색"></div>
+      <div id="searchResults" class="search-results hidden"></div>
+      <div id="neuronDetail"><div class="empty">지도의 뉴런을 선택해 보세요.</div></div>
+    </section>
+    <section id="memoryPanel" class="panel hidden">
+      <div class="panel-heading"><span class="eyebrow">LEARNING & MEMORY</span><h2>경험이 남기는 연결</h2></div>
+      <p class="muted">기억 모듈에 지식을 가르치고, 다음 대화에서 어떻게 사용되는지 살펴보세요.</p>
+      <form id="learnForm"><label for="learnText">새롭게 배울 내용</label><textarea id="learnText" placeholder="예: 우리 프로젝트의 이름은 Neurons이고, 목표는 신경계의 활동을 관찰하는 거야." maxlength="12000" required></textarea><label for="learnSource">출처</label><input id="learnSource" value="직접 입력" maxlength="500"><button type="submit" class="primary full">＋ 경험으로 저장</button></form>
+      <div class="section-title">기억 노드 <b id="memoryCount">0</b></div><p class="caption">인공 기억 모듈의 확장입니다. 원본 초파리 연결 가중치는 보존됩니다.</p><div id="memoryList"></div>
+    </section>
+    <section id="modulesPanel" class="panel hidden"><div class="panel-heading"><span class="eyebrow">CONNECTED MODULES</span><h2>가능성을 연결하다</h2></div><p class="muted">각 모듈을 독립적으로 연결하거나 멈출 수 있습니다.</p><div id="moduleList"></div><div class="model-box"><h3>로컬 언어모델</h3><div id="modelStatus">연결 확인 중</div><label for="modelSelect">대화 모델</label><select id="modelSelect"></select><button id="modelRefresh" class="outline full">연결 다시 확인</button><p class="caption">이 PC의 Ollama · 127.0.0.1:11435<br>대화 내용을 외부 AI 서비스로 전송하지 않습니다.</p></div></section>
+    <section id="eventsPanel" class="panel hidden"><div class="panel-heading"><span class="eyebrow">OBSERVATION LOG</span><h2>변화의 기록</h2></div><p class="muted">실제 입력, 자극, 기억 조회와 모듈 실행 기록입니다.</p><a class="outline export" href="/api/export" download>↓ 관측 기록 내보내기</a><div id="eventsList"></div></section>
+    <section id="chatPanel" class="panel chat-panel hidden"><div class="panel-heading"><span class="eyebrow">A CONVERSATION WITH NEURONS</span><h2>관찰하고, 물어보세요</h2><p id="chatModel" class="caption">로컬 언어모델 연결 확인 중</p></div><div id="chatMessages" class="chat-messages"><div class="welcome"><div class="mini-orbit">✧</div><h3>연결에 대해 이야기해 볼까요?</h3><p>학습한 기억과 현재 관측 상태를<br>바탕으로 로컬 모델이 답합니다.</p><button id="chatExample" class="suggestion">지금 신경계 상태를 설명해줘</button></div></div><form id="chatForm"><textarea id="chatInput" placeholder="Neurons에게 물어보세요…" maxlength="4000" rows="2" aria-label="대화 메시지" required></textarea><div class="chat-submit-row"><span>로컬에서 처리</span><button type="submit" id="chatSend" class="primary" aria-label="메시지 보내기">↑</button></div></form></section>
+    <div class="dock-bottom"><div><span class="tiny-dot"></span> LOCAL WORKSPACE</div><span>모든 경험은 이 PC에 저장됩니다.</span></div>
+  </aside>
+</main>
+<footer class="activity-bar"><div class="activity-label"><i></i><span>NETWORK ACTIVITY<small id="runStatus">자극을 기다리는 중</small></span></div><canvas id="activityChart" aria-label="최근 뉴런 발화량 그래프"></canvas><div class="activity-stat"><small>누적 발화</small><b id="spikeCount">0</b></div><div class="activity-stat"><small>계산 속도</small><b id="speed">—</b></div><div class="activity-stat"><small>단계 지연</small><b id="latency">—</b></div></footer>
+<div id="toast" role="status" class="toast hidden"></div>
+<dialog id="aboutDialog"><button class="dialog-close" id="closeAbout" aria-label="정보 닫기">×</button><span class="eyebrow">MODEL & PROVENANCE</span><h2>지도가 알려주는 것</h2><p>실제 MaleCNS v1.0 연결표 위에서 단순화된 LIF 뉴런 모델을 계산합니다. 뇌와 복측신경삭의 분류된 뉴런 166,700개가 모두 계산에 포함됩니다.</p><div id="modelFacts"></div><h3>지도 표현</h3><p>점은 세포체 또는 세포체 연결부 위치입니다. 선은 연결된 뉴런의 위치를 잇습니다. 개별 시냅스의 정확한 접촉 좌표나 수상돌기 형태는 이 화면에 로드되지 않았습니다. 전체 보기의 선은 표시용 표본이며, 계산 그래프는 표본화하지 않습니다.</p><h3>학습과 대화</h3><p>학습은 별도 인공 기억 모듈에 저장됩니다. 언어모델은 이 기억과 시뮬레이션 상태를 읽어 답합니다. 생물학적 시냅스의 학습, 자기 성장, 의식이 입증된 시스템을 의미하지 않습니다.</p><div class="source-links"><a href="https://male-cns.janelia.org/download/" target="_blank" rel="noreferrer">MaleCNS 원본 데이터 ↗</a><a href="https://doi.org/10.1016/j.cell.2026.08.015" target="_blank" rel="noreferrer">Cell 논문 ↗</a></div><p class="caption">데이터 CC BY 4.0 · Berg et al. · 2026-06-08 데이터 공개 / 2026-09-03 논문 발표</p></dialog>
+<script type="module" src="/app.js"></script>
+</body></html>

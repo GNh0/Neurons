@@ -1,0 +1,20 @@
+[
+  {
+    "file": "body-annotations-male-cns-v1.0-minconf-0.5.feather",
+    "bytes": 14483314,
+    "sha256": "2177E246113E4CFBF1E7772EC37C6DA1955FF22E8063D0B1F833101F99A9A3B2",
+    "verified": true
+  },
+  {
+    "file": "body-neurotransmitters-male-cns-v1.0.feather",
+    "bytes": 43282834,
+    "sha256": "95C9289220663ABEB3409F3AD9E5A7F8A53F8093F5139D15502CD08DA8879621",
+    "verified": true
+  },
+  {
+    "file": "connectome-weights-male-cns-v1.0-minconf-0.5.feather",
+    "bytes": 1051241946,
+    "sha256": "E35DA783D1C686B2B58B3B87CD6A403AE43BFCFBA8BFF28E08EF752C1A56AFC1",
+    "verified": true
+  }
+]

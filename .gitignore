@@ -1,0 +1,16 @@
+.runtime/
+.venv/
+.data/
+__pycache__/
+*.pyc
+artifacts/
+logs/
+dist/
+build/
+*.spec
+*.zip
+*.sqlite3*
+.env
+.env.*
+Neurons.exe
+_internal/
