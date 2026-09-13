@@ -1,4 +1,4 @@
-param([int]$Port = 8878, [switch]$OpenBrowser)
+param([int]$Port = 8877, [switch]$OpenBrowser)
 $ErrorActionPreference = 'Stop'
 if ($Port -lt 1024 -or $Port -gt 65535) { throw 'Port must be between 1024 and 65535.' }
 $taskRoot = $PSScriptRoot

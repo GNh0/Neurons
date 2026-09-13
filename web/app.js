@@ -1,4 +1,5 @@
 import {NeuronSpace} from './space.js';
+import {setupResearch} from './research.js';
 const $=id=>document.getElementById(id),fmt=n=>Number(n).toLocaleString('ko-KR');
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state=null,space=null,selected=null,view='inspect',toastTimer,searchTimer,selectionSeq=0,chatBusy=false,lastEventId=0;
@@ -12,7 +13,7 @@ function toast(text,error=false){clearTimeout(toastTimer);$('toast').textContent
 function listen(id,handler){$(id).addEventListener('click',async e=>{try{await handler(e);}catch(err){toast(err.message,true);}});}
 function setView(name){
   view=name;
-  for(const key of ['inspect','memory','modules','events','chat'])$(key+'Panel').classList.toggle('hidden',key!==name);
+  for(const key of ['inspect','memory','modules','events','chat','research'])$(key+'Panel').classList.toggle('hidden',key!==name);
   document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===name));
   document.querySelectorAll('[data-dock]').forEach(b=>b.classList.toggle('active',b.dataset.dock===name));
   if(name==='memory')loadMemories();if(name==='modules'){renderModules();refreshModel();}if(name==='events')renderEvents();
@@ -121,6 +122,7 @@ async function init(){
     space=new NeuronSpace($('space'),index=>selectNeuron(index,true).catch(e=>toast(e.message,true)),label=>$('frameCount').textContent=label);
     space.load(new Float32Array(await s.arrayBuffer()),next.classes,new Uint32Array(await e.arrayBuffer()));
     $('loading').classList.add('hidden');updateRenderCount();await selectNeuron(10001);await refreshModel();poll();pollSelection();
+    setupResearch({api,space,toast,showPanel:setView});
   }catch(error){$('loading').innerHTML=`<b>관측실을 열지 못했습니다.</b><span>${escape(error.message)}</span>`;console.error(error);}
 }
 init();

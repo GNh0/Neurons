@@ -13,7 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     dist = ROOT / 'artifacts' / 'windows'
     subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--onedir',
-        '--name', 'Neurons', '--distpath', str(dist), '--workpath', str(ROOT / '.runtime' / 'build'),
+        '--name', 'Neurons', '--collect-all', 'ddgs', '--collect-all', 'primp', '--collect-all', 'lxml',
+        '--distpath', str(dist), '--workpath', str(ROOT / '.runtime' / 'build'),
         '--specpath', str(ROOT / '.runtime'), str(ROOT / 'app.py')], cwd=ROOT, check=True)
     package = dist / 'Neurons'
     for filename in ('start.ps1', 'Run Neurons.cmd', 'README.md', 'NOTICE.md', 'original-data-verification.json'):
@@ -32,8 +33,11 @@ def main():
     site = Path(sys.executable).parent.parent / 'Lib' / 'site-packages'
     licenses = package / 'third-party'
     licenses.mkdir(exist_ok=True)
+    python_license = Path(sys.base_prefix) / 'LICENSE.txt'
+    if python_license.exists():
+        shutil.copy2(python_license, licenses / 'Python-LICENSE.txt')
     for metadata in site.glob('*.dist-info'):
-        if metadata.name.lower().startswith(('numpy-', 'scipy-', 'pyinstaller-', 'pyinstaller_hooks_', 'altgraph-', 'pefile-', 'packaging-')):
+        if metadata.name.lower().startswith(('numpy-', 'scipy-', 'pyinstaller-', 'pyinstaller_hooks_', 'altgraph-', 'pefile-', 'packaging-', 'ddgs-', 'primp-', 'lxml-', 'click-')):
             shutil.copytree(metadata, licenses / metadata.name, dirs_exist_ok=True)
     forbidden = [p for p in package.rglob('*') if p.is_file() and
                  (p.suffix in ('.gguf', '.sqlite3') or p.name.endswith(('.sqlite3-wal', '.sqlite3-shm')) or 'ollama' in p.parts)]

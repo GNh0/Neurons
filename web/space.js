@@ -92,6 +92,22 @@ export class NeuronSpace {
     this.stars=this.createGroup(pos,col,new Float32Array(n),new Float32Array(n),new Float32Array(n).fill(-100),new Float32Array(n));
   }
   createGroup(pos,color,group,missing,index,activity){return{count:pos.length/3,buffers:{aPosition:this.makeBuffer(pos),aColor:this.makeBuffer(color),aGroup:this.makeBuffer(group),aMissing:this.makeBuffer(missing),aIndex:this.makeBuffer(index),aActivity:this.makeBuffer(activity)}};}
+  setLearningGraph(graph){
+    this.learningGraph=graph;this.destroyGroup(this.learningData);this.destroyGroup(this.learningEdges);
+    const n=graph.items.length,pos=new Float32Array(n*3),col=new Float32Array(n*3),activity=new Float32Array(n),index=new Map();
+    for(let i=0;i<n;i++){
+      const node=graph.items[i],phi=node.id*2.399963,y=1-2*((node.id*.61803398875)%1),r=.5+.38*((node.id*.41421356237)%1),rad=Math.sqrt(1-y*y);
+      pos.set([Math.cos(phi)*rad*r,y*r,Math.sin(phi)*rad*r],i*3);col.set([.97,.61,.32],i*3);activity[i]=node.activity;index.set(node.id,i);
+    }
+    this.learningPositions=pos;
+    this.learningData=this.createGroup(pos,col,new Float32Array(n),new Float32Array(n),new Float32Array(n).fill(-200),activity);
+    const count=graph.connections.length*2,ep=new Float32Array(count*3),ec=new Float32Array(count*3),ea=new Float32Array(count);
+    for(let i=0;i<graph.connections.length;i++)for(let end=0;end<2;end++){
+      const edge=graph.connections[i],v=i*2+end;
+      ep.set(pos.subarray(index.get(edge[end])*3,index.get(edge[end])*3+3),v*3);ec.set([.68,.39,.18],v*3);ea[v]=Math.min(.8,edge[2]/4);
+    }
+    this.learningEdges=this.createGroup(ep,ec,new Float32Array(count),new Float32Array(count),new Float32Array(count).fill(-200),ea);
+  }
   destroyGroup(group){if(group)for(const b of Object.values(group.buffers))this.gl.deleteBuffer(b);}
   setEdges(edges,focus){
     this.destroyGroup(this.edgeData);this.focusEdges=focus;this.currentEdges=edges;const count=edges.length/3*2;
@@ -122,8 +138,8 @@ export class NeuronSpace {
       const loc=p.attributes[name];if(loc<0)continue;gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,(name==='aPosition'||name==='aColor')?3:1,gl.FLOAT,false,0,0);
     }
     const uniforms={uYaw:options.stars?this.yaw*.05:this.yaw,uPitch:options.stars?0:this.pitch,uZoom:this.zoom,
-      uAspect:this.canvas.width/this.canvas.height,uFilter:options.stars?0:this.filter,uMissing:this.showMissing?1:0,
-      uSelected:this.selected,uSize:(options.stars?1.5:2.0)*(this.dpr||1),uAlpha:this.focusEdges?.15:.028};
+      uAspect:this.canvas.width/this.canvas.height,uFilter:options.stars||options.learning?0:this.filter,uMissing:this.showMissing?1:0,
+      uSelected:this.selected,uSize:(options.stars?1.5:options.learning?7:2.0)*(this.dpr||1),uAlpha:this.focusEdges?.15:.028};
     for(const [key,value] of Object.entries(uniforms))if(p.uniforms[key]!==null)gl.uniform1f(p.uniforms[key],value);
     gl.drawArrays(mode,0,group.count);
   }
@@ -133,19 +149,34 @@ export class NeuronSpace {
     if(this.rotating&&!this.drag)this.yaw+=delta*.000045;
     gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
     this.draw(this.points,this.stars,gl.POINTS,{stars:true});
-    if(this.showLinks)this.draw(this.lines,this.edgeData,gl.LINES);
-    this.draw(this.points,this.data,gl.POINTS);
+    if(this.learningMode){
+      if(this.showLinks)this.draw(this.lines,this.learningEdges,gl.LINES,{learning:true});
+      this.draw(this.points,this.learningData,gl.POINTS,{learning:true});
+    }else{
+      if(this.showLinks)this.draw(this.lines,this.edgeData,gl.LINES);
+      this.draw(this.points,this.data,gl.POINTS);
+    }
     this.frames++;if(now-this.frameStart>1500){this.onFrame?.(`${Math.round(this.frames*1000/(now-this.frameStart))} FPS · WebGL`);this.frames=0;this.frameStart=now;}
     requestAnimationFrame(this.animate);
   }
   projected(index){
-    const p=this.positions.subarray(index*3,index*3+3);const x=Math.cos(this.yaw)*p[0]+Math.sin(this.yaw)*p[2],z=-Math.sin(this.yaw)*p[0]+Math.cos(this.yaw)*p[2];
+    return this.projectPosition(this.positions.subarray(index*3,index*3+3));
+  }
+  projectPosition(p){
+    const x=Math.cos(this.yaw)*p[0]+Math.sin(this.yaw)*p[2],z=-Math.sin(this.yaw)*p[0]+Math.cos(this.yaw)*p[2];
     const y=Math.cos(this.pitch)*p[1]-Math.sin(this.pitch)*z,rz=Math.sin(this.pitch)*p[1]+Math.cos(this.pitch)*z;
     const aspect=this.canvas.clientWidth/this.canvas.clientHeight;
     return[(x*this.zoom/(4-rz)/aspect+1)*.5*this.canvas.clientWidth,(1-(y*this.zoom/(4-rz)-.17))*.5*this.canvas.clientHeight];
   }
   pick(x,y){
     if(!this.data)return;let best=-1,dist=100;
+    if(this.learningMode){
+      for(let i=0;i<(this.learningGraph?.items.length||0);i++){
+        const p=this.projectPosition(this.learningPositions.subarray(i*3,i*3+3)),d=(p[0]-x)**2+(p[1]-y)**2;
+        if(d<dist){dist=d;best=i;}
+      }
+      if(best>=0)this.onConcept?.(this.learningGraph.items[best]);return;
+    }
     for(let i=0;i<this.count;i++){
       if((!this.showMissing&&this.missing[i])||(this.filter&&this.groups[i]!==this.filter))continue;
       const p=this.projected(i),d=(p[0]-x)**2+(p[1]-y)**2;if(d<dist){dist=d;best=i;}

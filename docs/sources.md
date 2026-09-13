@@ -12,6 +12,11 @@
   - 연결지도 기반 LIF 모델의 특정 감각·운동 회로 예측. 모든 인지 기능 재현을 의미하지 않는다.
 - Ollama API: https://docs.ollama.com/api/chat
 - Ollama 로컬 모델 목록: https://docs.ollama.com/api/tags
+- Ollama 구조화 출력: https://docs.ollama.com/capabilities/structured-outputs
+- DDGS 검색 라이브러리: https://github.com/deedy5/ddgs
+- Europe PMC 자료 API: https://europepmc.org/RestfulWebService
+- Legenstein et al., 2008 보상 조절 가소성: https://doi.org/10.1371/journal.pcbi.1000180
+  - 향후 실험 회로의 학습 규칙 검토 자료. 현재 구현·재현 완료 항목이 아님.
 - Qwen3.5 4B 배포: https://ollama.com/library/qwen3.5:4b
 
 공개 데이터의 실제 가져오기에는 해당 데이터셋의 라이선스와 출처를 유지한다.

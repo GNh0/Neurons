@@ -9,11 +9,12 @@ from urllib.parse import urlparse, parse_qs
 
 from neurons.modules import Modules
 from neurons.simulation import Simulation
+from neurons.research import Research
 
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent
 
 
-def make_handler(simulation, modules):
+def make_handler(simulation, modules, research=None):
     chat_gate = threading.Lock()
 
     class Handler(BaseHTTPRequestHandler):
@@ -48,7 +49,7 @@ def make_handler(simulation, modules):
             path, query = parsed.path, parse_qs(parsed.query)
             try:
                 if path == '/api/health':
-                    return self.send({'ready': True, 'app': 'Neurons', 'version': '0.1.0', 'neurons': simulation.n})
+                    return self.send({'ready': True, 'app': 'Neurons', 'version': '0.2.0', 'neurons': simulation.n})
                 if path == '/api/state':
                     return self.send({**simulation.state(), **modules.summary()})
                 if path == '/api/scene':
@@ -72,13 +73,20 @@ def make_handler(simulation, modules):
                     return self.send(modules.conversation())
                 if path == '/api/llm':
                     return self.send(modules.ollama_status())
+                if path == '/api/learning-graph':
+                    with modules.lock:
+                        return self.send(modules.learning.graph())
+                if path == '/api/research' and research:
+                    return self.send(research.status())
                 if path == '/api/export':
                     return self.send({'simulation': simulation.state(), 'memories': modules.memories(),
-                                      'conversation': modules.conversation()},
+                                      'conversation': modules.conversation(),
+                                      'research': research.status() if research else None},
                                      extra={'Content-Disposition': 'attachment; filename="neurons-observation.json"'})
                 static_files = {'/': ('index.html', 'text/html; charset=utf-8'),
                                 '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                                 '/launch.js': ('launch.js', 'text/javascript; charset=utf-8'),
+                                '/research.js': ('research.js', 'text/javascript; charset=utf-8'),
                                 '/space.js': ('space.js', 'text/javascript; charset=utf-8'),
                                 '/style.css': ('style.css', 'text/css; charset=utf-8')}
                 if path in static_files:
@@ -108,6 +116,13 @@ def make_handler(simulation, modules):
                 if path == '/api/control':
                     simulation.control(body.get('action'))
                     return self.send({'ok': True})
+                if path == '/api/research' and research:
+                    if body.get('action') == 'stop':
+                        research.stop()
+                        return self.send(research.status())
+                    if body.get('action') == 'start':
+                        return self.send(research.start(body.get('goal'), body.get('limit', 3), body.get('interval', 15)))
+                    raise ValueError('지원하지 않는 탐구 명령입니다.')
                 if path == '/api/stimulate':
                     return self.send(modules.execute('stimulus', identifiers=body.get('ids'), cell_type=body.get('type'),
                                                          preset=body.get('preset'), amplitude=body.get('amplitude', 12),
@@ -156,14 +171,17 @@ def main():
     print('Loading full MaleCNS graph...', flush=True)
     simulation = Simulation(compiled)
     modules = Modules(ROOT / '.data', simulation)
-    server = ThreadingHTTPServer(('127.0.0.1', args.port), make_handler(simulation, modules))
+    research = Research(modules)
+    modules.research = research
+    server = ThreadingHTTPServer(('127.0.0.1', args.port), make_handler(simulation, modules, research))
     server.daemon_threads = True
-    print(f'Neurons 0.1.0 | {simulation.n:,} neurons | http://127.0.0.1:{args.port}', flush=True)
+    print(f'Neurons 0.2.0 | {simulation.n:,} neurons | http://127.0.0.1:{args.port}', flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        research.stop()
         simulation.close()
         server.server_close()
 
