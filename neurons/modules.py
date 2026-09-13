@@ -223,6 +223,10 @@ class Modules:
         facts = {'dataset': observed['manifest'], 'simulation_ms': observed['sim_ms'],
                  'spikes': observed['total_spikes'], 'model_assumptions': observed['model'],
                  'memories': [{**m, 'text': m['text'][:1200]} for m in memories[:3]]}
+        if hasattr(self, 'individual_context'):
+            facts['individual'] = self.individual_context()
+            trace['steps'].append({'label': '선택 개체의 목적과 경험 조회',
+                                   'detail': facts['individual']['name'] + ' · ' + facts['individual']['goal']})
         if hasattr(self, 'research'):
             research = self.research.status()
             facts['research'] = {k: research[k] for k in ('running', 'phase', 'goal', 'current_question', 'completed_cycles')}
@@ -246,6 +250,8 @@ class Modules:
         started = time.perf_counter()
         try:
             with self.llm_lock:
+                if hasattr(self, 'chat_guard'):
+                    self.chat_guard()
                 with urllib.request.urlopen(req, timeout=150) as response:
                     result = json.load(response)
             answer = result.get('message', {}).get('content', '').strip()
@@ -283,6 +289,8 @@ class Modules:
         request = urllib.request.Request(self.endpoint + '/api/chat', data=json.dumps(body).encode(),
                                          headers={'Content-Type': 'application/json'}, method='POST')
         with self.llm_lock:
+            if hasattr(self, 'request_guard'):
+                self.request_guard()
             with urllib.request.urlopen(request, timeout=150) as response:
                 answer = json.load(response)
         result = json.loads(answer.get('message', {}).get('content', ''))

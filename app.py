@@ -10,16 +10,17 @@ from urllib.parse import urlparse, parse_qs
 from neurons.modules import Modules
 from neurons.simulation import Simulation
 from neurons.research import Research
+from neurons.individuals import IndividualLab
 
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent
 
 
-def make_handler(simulation, modules, research=None):
+def make_handler(simulation, modules, research=None, lab=None, lab_error=''):
     chat_gate = threading.Lock()
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
-            if self.path not in ('/api/state', '/api/activity'):
+            if not self.path.startswith(('/api/state', '/api/activity', '/api/individuals')):
                 super().log_message(format, *args)
 
         def send(self, payload, status=200, content_type='application/json; charset=utf-8', extra=None):
@@ -48,25 +49,38 @@ def make_handler(simulation, modules, research=None):
             parsed = urlparse(self.path)
             path, query = parsed.path, parse_qs(parsed.query)
             try:
+                observed = lab.brain(query['agent'][0]) if lab and query.get('agent') else simulation
                 if path == '/api/health':
-                    return self.send({'ready': True, 'app': 'Neurons', 'version': '0.2.0', 'neurons': simulation.n})
+                    return self.send({'ready': True, 'app': 'Neurons', 'version': '0.3.0', 'neurons': simulation.n})
                 if path == '/api/state':
-                    return self.send({**simulation.state(), **modules.summary()})
+                    payload = {**observed.state(), **modules.summary()}
+                    if lab and query.get('agent'):
+                        payload['running'] = lab.running and lab.individuals[query['agent'][0]].active
+                    return self.send(payload)
                 if path == '/api/scene':
                     return self.send(simulation.scene(), content_type='application/octet-stream')
                 if path == '/api/edges':
                     return self.send(simulation.overview_edges(), content_type='application/octet-stream')
                 if path == '/api/activity':
-                    return self.send(simulation.activity_bytes(), content_type='application/octet-stream')
+                    return self.send(observed.activity_bytes(), content_type='application/octet-stream')
                 if path == '/api/search':
                     return self.send(simulation.search(query.get('q', ['DNp01'])[0][:100]))
                 if path.startswith('/api/neuron/'):
-                    return self.send(simulation.neuron(int(path.rsplit('/', 1)[1])))
+                    return self.send(observed.neuron(int(path.rsplit('/', 1)[1])))
                 if path.startswith('/api/index/'):
                     index = int(path.rsplit('/', 1)[1])
                     if not 0 <= index < simulation.n:
                         raise ValueError('뉴런 인덱스 범위 오류')
-                    return self.send(simulation.neuron(int(simulation.ids[index])))
+                    return self.send(observed.neuron(int(simulation.ids[index])))
+                if path == '/api/individuals':
+                    center=(float(query['x'][0]),float(query['y'][0])) if 'x' in query and 'y' in query else None
+                    return self.send(lab.state(query.get('focus',[None])[0],center,int(query.get('radius',[12])[0])) if lab else {'ready': False, 'error': lab_error or '개체 세계가 준비되지 않았습니다.'})
+                if path.startswith('/api/individuals/') and lab:
+                    parts = path.strip('/').split('/')
+                    if len(parts) == 3:
+                        return self.send(lab.detail(parts[2]))
+                    if len(parts) == 4 and parts[3] == 'conversation':
+                        return self.send(lab.individuals[parts[2]].memories.conversation())
                 if path == '/api/memories':
                     return self.send(modules.memories())
                 if path == '/api/conversation':
@@ -87,6 +101,8 @@ def make_handler(simulation, modules, research=None):
                                 '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                                 '/launch.js': ('launch.js', 'text/javascript; charset=utf-8'),
                                 '/research.js': ('research.js', 'text/javascript; charset=utf-8'),
+                                '/world.js': ('world.js', 'text/javascript; charset=utf-8'),
+                                '/world.css': ('world.css', 'text/css; charset=utf-8'),
                                 '/space.js': ('space.js', 'text/javascript; charset=utf-8'),
                                 '/style.css': ('style.css', 'text/css; charset=utf-8')}
                 if path in static_files:
@@ -113,6 +129,24 @@ def make_handler(simulation, modules, research=None):
                 if not isinstance(body, dict):
                     raise ValueError('JSON 객체가 필요합니다.')
                 path = urlparse(self.path).path
+                if path.startswith('/api/individuals/'):
+                    if not lab:
+                        return self.send({'error': lab_error or '개체 세계가 준비되지 않았습니다.'}, 503)
+                    if path == '/api/individuals/control':
+                        lab.control(body.get('action'))
+                        return self.send(lab.state())
+                    if path == '/api/individuals/create':
+                        return self.send(lab.create(body.get('name'), body.get('goal'), body.get('description', '')))
+                    parts = path.strip('/').split('/')
+                    if len(parts) == 4 and parts[3] == 'config':
+                        return self.send(lab.configure(parts[2], body))
+                    if len(parts) == 4 and parts[3] == 'chat':
+                        if not chat_gate.acquire(blocking=False):
+                            return self.send({'error': '이전 대화 응답을 기다려 주세요.'}, 409)
+                        try:
+                            return self.send(lab.chat(parts[2], body.get('text', '')))
+                        finally:
+                            chat_gate.release()
                 if path == '/api/control':
                     simulation.control(body.get('action'))
                     return self.send({'ok': True})
@@ -129,6 +163,8 @@ def make_handler(simulation, modules, research=None):
                                                          duration=body.get('duration', 100)))
                 if path == '/api/module':
                     modules.toggle(body.get('id'), body.get('enabled'))
+                    if lab and body.get('id') in ('language', 'web') and not body.get('enabled'):
+                        lab.stop_research()
                     return self.send(modules.summary())
                 if path == '/api/learn':
                     return self.send(modules.execute('memory', text=body.get('text', ''), source=body.get('source', '직접 입력')))
@@ -164,7 +200,12 @@ def make_handler(simulation, modules, research=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8877)
+    parser.add_argument('--configure-postgres', action='store_true')
     args = parser.parse_args()
+    if args.configure_postgres:
+        from scripts.configure_postgres import run
+        run()
+        return
     compiled = ROOT / '.data' / 'malecns' / 'compiled'
     if not (compiled / 'manifest.json').exists():
         raise SystemExit('Run scripts/fetch_malecns.py and scripts/prepare_connectome.py first.')
@@ -173,15 +214,25 @@ def main():
     modules = Modules(ROOT / '.data', simulation)
     research = Research(modules)
     modules.research = research
-    server = ThreadingHTTPServer(('127.0.0.1', args.port), make_handler(simulation, modules, research))
+    lab, lab_error = None, ''
+    try:
+        lab = IndividualLab(ROOT, simulation, modules)
+    except Exception as error:
+        # An explicit PostgreSQL setup failing is surfaced, never replaced with
+        # another store containing new blank individuals.
+        lab_error = '개체 저장소를 열지 못했습니다. PostgreSQL 연결 설정과 저장 상태를 확인해 주세요. (' + type(error).__name__ + ')'
+        print(lab_error, flush=True)
+    server = ThreadingHTTPServer(('127.0.0.1', args.port), make_handler(simulation, modules, research, lab, lab_error))
     server.daemon_threads = True
-    print(f'Neurons 0.2.0 | {simulation.n:,} neurons | http://127.0.0.1:{args.port}', flush=True)
+    print(f'Neurons 0.3.0 | {simulation.n:,} neurons | http://127.0.0.1:{args.port}', flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         research.stop()
+        if lab:
+            lab.close()
         simulation.close()
         server.server_close()
 

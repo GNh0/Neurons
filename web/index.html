@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="ko">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Neurons — CNS Observatory</title><link rel="stylesheet" href="./style.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Neurons — CNS Observatory</title><link rel="stylesheet" href="./style.css"><link rel="stylesheet" href="./world.css"></head>
 <body>
 <header class="topbar">
   <a class="brand" href="/" aria-label="Neurons 관측실"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 24V8L24 24V8"/><circle cx="8" cy="8" r="3"/><circle cx="24" cy="24" r="3"/></svg><span>NEURONS<small>CNS OBSERVATORY</small></span></a>
-  <nav aria-label="작업 공간"><button class="nav active" data-view="inspect">관측실</button><button class="nav" data-view="research">자료 탐구</button><button class="nav" data-view="memory">학습 & 기억</button><button class="nav" data-view="modules">모듈</button><button class="nav" data-view="events">활동 기록</button></nav>
-  <div class="top-right"><span class="badge"><i></i> LOCAL</span><button id="aboutBtn" class="icon-button" aria-label="모델과 데이터 정보">ⓘ</button><span class="version">v0.2.0</span></div>
+  <nav aria-label="작업 공간"><button class="nav active" data-view="inspect">관측실</button><button class="nav" data-view="world">개체와 세계</button><button class="nav" data-view="research">자료 탐구</button><button class="nav" data-view="memory">학습 & 기억</button><button class="nav" data-view="modules">모듈</button><button class="nav" data-view="events">활동 기록</button></nav>
+  <div class="top-right"><span class="badge"><i></i> LOCAL</span><button id="aboutBtn" class="icon-button" aria-label="모델과 데이터 정보">ⓘ</button><span class="version">v0.3.0</span></div>
 </header>
 <main>
   <section class="universe" aria-label="3D 뉴런 지도">
@@ -37,19 +37,47 @@
       <button id="visualBtn" class="stimulate">✦ 시각계 시험 자극</button>
     </div>
     <div class="scene-footnote"><span id="renderCount">3D 좌표 로드 중</span><span id="frameCount">WebGL</span></div>
+    <div id="worldSurface" class="world-surface hidden">
+      <div class="world-heading"><div><span class="eyebrow">AN OPEN WORLD · LIVES & GENERATIONS</span><h1>살아가며, 이어지는 세계<span>.</span></h1><p>발견과 경험, 만남과 다음 세대를 관찰합니다.</p></div><span class="world-badge" id="worldStorage">저장소 확인 중</span></div>
+      <div class="world-summary" id="worldSummary"></div>
+      <div class="world-camera"><button id="worldFollow" class="outline">◎ 선택 개체 따라가기</button><button id="worldZoomIn" class="outline" aria-label="세계 지도 확대">＋</button><button id="worldZoomOut" class="outline" aria-label="세계 지도 축소">−</button><span id="worldCoordinates"></span></div>
+      <div class="arena-wrap"><canvas id="arena" aria-label="드래그로 이동하고 휠로 확대하는 지형, 사물, 개체의 세계 지도"></canvas><div class="arena-legend"><span><i class="food-key"></i>먹거리</span><span><i class="water-key"></i>물</span><span><i class="plant-key"></i>나무·자원</span><span>드래그 이동 · 휠 확대 · 사물 클릭</span></div><div id="worldMessage" class="world-message"></div><div id="worldObject" class="world-object hidden"></div></div>
+      <div class="world-pipeline"><span>감각 입력</span><b>→</b><span>개별 신경 활동</span><b>→</b><span class="mint">학습 행동 회로</span><b>→</b><span>행동 · 실제 보상</span></div>
+      <div class="world-transport glass"><button id="worldPlay" class="primary">▶ 세계 실행</button><button id="worldStep" class="outline">한 행동</button><button id="worldSave" class="outline">상태 저장</button><span id="worldClock">일시정지</span></div>
+      <p class="world-note" id="worldModelNote">주변 지형만 불러오는 실험 세계 · 원본 연결은 고정, 개체별 행동 회로는 경험으로 학습합니다.</p>
+    </div>
   </section>
 
   <aside class="dock">
     <div class="dock-tabs"><button data-dock="inspect" class="active">탐색</button><button data-dock="chat">대화 <span class="dot" id="llmDot"></span></button></div>
     <section id="inspectPanel" class="panel">
       <div class="panel-heading"><span class="eyebrow">NEURON EXPLORER</span><h2>연결을 들여다보다</h2></div>
+      <label for="observationAgent">관측할 신경계</label><select id="observationAgent"><option value="">원본 시험 시뮬레이션</option></select><p id="observationNote" class="caption">선택한 신경계의 발화와 막전위를 표시합니다.</p>
       <div class="search-wrap"><span>⌕</span><input id="neuronSearch" type="search" placeholder="뉴런 ID 또는 세포 유형 검색" autocomplete="off" aria-label="뉴런 검색"></div>
       <div id="searchResults" class="search-results hidden"></div>
       <div id="neuronDetail"><div class="empty">지도의 뉴런을 선택해 보세요.</div></div>
     </section>
+    <section id="worldPanel" class="panel hidden">
+      <div class="panel-heading"><span class="eyebrow">AN INDIVIDUAL'S WORLD</span><h2>각자의 목적, 쌓이는 경험</h2></div>
+      <label for="individualSelect">개체 선택</label><select id="individualSelect"></select>
+      <div class="individual-tabs"><button id="individualBrain" class="outline">이 개체의 3D 뉴런맵</button><button id="individualNew" class="outline">＋ 개체</button></div>
+      <div id="individualLife" class="individual-life"></div>
+      <form id="individualSettings"><label for="individualGoal">행동 보상 기준</label><select id="individualGoal"></select><label for="individualDescription">이 개체의 목적</label><textarea id="individualDescription" maxlength="400" rows="2" required></textarea><button class="outline full" type="submit">목적 적용</button></form>
+      <div class="individual-switches"><label><span>개체 활동</span><input id="individualActive" type="checkbox"></label><label><span>경험으로 신경 가중치 학습</span><input id="individualLearning" type="checkbox"></label><label><span>LLM 자료 수집 · 복습 보조</span><input id="individualLLM" type="checkbox"></label></div>
+      <div class="individual-stats" id="individualStats"></div>
+      <div class="section-title">현재 욕구</div><div id="individualDrives" class="individual-drives"></div>
+      <details open><summary>소지품과 배운 사물</summary><div id="individualInventory" class="inventory-chips"></div><div id="individualKnowledge"></div></details>
+      <div class="section-title">최근 행동 선택 시 발화 확률</div><div id="actionProbabilities" class="action-probabilities"></div>
+      <div class="section-title">실제 학습 가중치 <b id="weightDimensions"></b></div><canvas id="weightMap" aria-label="신경 활동 입력과 행동 뉴런 사이의 학습 가중치"></canvas><p class="caption">초록 + · 보라 − · 밝기 = 절댓값. 원본 연결 가중치는 고정이며, 이 실험 회로의 가중치가 행동 선택에 쓰입니다.</p>
+      <div id="individualLesson" class="individual-lesson"></div><p class="caption">사물 기억은 개체별 기록입니다. LLM은 목적과 기록에서 질문을 만들고 자료를 찾아 실제 경험의 복습을 돕습니다. 자연어 목적 설명과 행동 보상 기준은 따로 설정합니다.</p>
+      <details><summary>세대와 집단의 변화</summary><div id="worldProgress"></div><div id="individualLineage"></div></details>
+      <details><summary>최근 행동과 자료 기록</summary><div id="individualHistory"></div></details>
+      <details id="individualChatDetails"><summary>이 개체의 경험에 관해 대화</summary><p class="caption">로컬 LLM이 이 개체의 기록을 읽어 설명합니다.</p><div id="individualMessages"></div><form id="individualChatForm"><textarea id="individualChatInput" maxlength="4000" rows="2" placeholder="어떤 경험을 쌓았어?" required aria-label="개체 대화 메시지"></textarea><button id="individualChatSend" class="primary full">메시지 보내기</button></form></details>
+      <details><summary>세계의 규칙과 관찰 범위</summary><div id="worldRules"></div><p class="caption">제작법·생리·보상은 제공된 실험 규칙입니다. 제작 성공과 세대 수만으로 문명이나 인간 수준 지능이 생겼다고 판단하지 않습니다. 유전 특성에 변이가 생기며, 배운 가중치와 개인 기억은 자손에게 자동 복사하지 않습니다.</p></details>
+    </section>
     <section id="researchPanel" class="panel hidden">
       <div class="panel-heading"><span class="eyebrow">RESEARCH ASSISTANT</span><h2>학습을 위한 자료 탐구</h2></div>
-      <p class="muted">로컬 LLM이 목표에 맞는 질문과 자료를 정리하는 보조 모듈입니다. 원본 신경 회로의 자율적인 판단·행동 학습은 아직 구현되지 않았습니다.</p>
+      <p class="muted">로컬 LLM이 목표에 맞는 질문과 자료를 정리합니다. 개체별 행동과 신경 가중치의 경험 학습은 ‘개체와 세계’에서 관찰할 수 있습니다.</p>
       <label for="researchGoal">탐구 목표</label><textarea id="researchGoal" maxlength="500" rows="3"></textarea>
       <div class="research-options"><label>반복 횟수<input id="researchLimit" type="number" value="3" min="1" max="100"></label><label>회차 간격(초)<input id="researchInterval" type="number" value="15" min="5" max="600"></label></div>
       <button id="researchStart" class="primary full">▶ 자료 탐구 시작</button><div class="research-actions"><button id="researchOnce" class="outline">한 번 탐구</button><button id="researchStop" class="outline" disabled>탐구 중단</button></div>
@@ -72,6 +100,6 @@
 </main>
 <footer class="activity-bar"><div class="activity-label"><i></i><span>NETWORK ACTIVITY<small id="runStatus">자극을 기다리는 중</small></span></div><canvas id="activityChart" aria-label="최근 뉴런 발화량 그래프"></canvas><div class="activity-stat"><small>누적 발화</small><b id="spikeCount">0</b></div><div class="activity-stat"><small>계산 속도</small><b id="speed">—</b></div><div class="activity-stat"><small>단계 지연</small><b id="latency">—</b></div></footer>
 <div id="toast" role="status" class="toast hidden"></div>
-<dialog id="aboutDialog"><button class="dialog-close" id="closeAbout" aria-label="정보 닫기">×</button><span class="eyebrow">MODEL & PROVENANCE</span><h2>지도가 알려주는 것</h2><p>실제 MaleCNS v1.0 연결표 위에서 단순화된 LIF 뉴런 모델을 계산합니다. 뇌와 복측신경삭의 분류된 뉴런 166,700개가 모두 계산에 포함됩니다.</p><div id="modelFacts"></div><h3>지도 표현</h3><p>점은 세포체 또는 세포체 연결부 위치입니다. 선은 연결된 뉴런의 위치를 잇습니다. 개별 시냅스의 정확한 접촉 좌표나 수상돌기 형태는 이 화면에 로드되지 않았습니다. 전체 보기의 선은 표시용 표본이며, 계산 그래프는 표본화하지 않습니다.</p><h3>학습과 대화</h3><p>학습은 별도 인공 기억 모듈에 저장됩니다. 언어모델은 이 기억과 시뮬레이션 상태를 읽어 답합니다. 생물학적 시냅스의 학습, 자기 성장, 의식이 입증된 시스템을 의미하지 않습니다.</p><div class="source-links"><a href="https://male-cns.janelia.org/download/" target="_blank" rel="noreferrer">MaleCNS 원본 데이터 ↗</a><a href="https://doi.org/10.1016/j.cell.2026.08.015" target="_blank" rel="noreferrer">Cell 논문 ↗</a></div><p class="caption">데이터 CC BY 4.0 · Berg et al. · 2026-06-08 데이터 공개 / 2026-09-03 논문 발표</p></dialog>
+<dialog id="aboutDialog"><button class="dialog-close" id="closeAbout" aria-label="정보 닫기">×</button><span class="eyebrow">MODEL & PROVENANCE</span><h2>지도가 알려주는 것</h2><p>실제 MaleCNS v1.0 연결표 위에서 단순화된 LIF 뉴런 모델을 계산합니다. 뇌와 복측신경삭의 분류된 뉴런 166,700개가 모두 계산에 포함됩니다.</p><div id="modelFacts"></div><h3>지도 표현</h3><p>점은 세포체 또는 세포체 연결부 위치입니다. 선은 연결된 뉴런의 위치를 잇습니다. 개별 시냅스의 정확한 접촉 좌표나 수상돌기 형태는 이 화면에 로드되지 않았습니다. 전체 보기의 선은 표시용 표본이며, 계산 그래프는 표본화하지 않습니다.</p><h3>학습과 대화</h3><p>개체는 독립된 LIF 신경 활동으로 행동을 선택하고, 추가한 실험 행동 시냅스 600개를 실제 보상으로 학습합니다. 원본 MaleCNS 연결은 고정입니다. LLM은 개체의 목적과 기록을 읽고 자료 탐구·경험 복습·대화를 돕습니다. 원본 뇌 전체의 생물학적 학습, 자기 성장, 의식이 입증된 시스템을 의미하지 않습니다.</p><div class="source-links"><a href="https://male-cns.janelia.org/download/" target="_blank" rel="noreferrer">MaleCNS 원본 데이터 ↗</a><a href="https://doi.org/10.1016/j.cell.2026.08.015" target="_blank" rel="noreferrer">Cell 논문 ↗</a></div><p class="caption">데이터 CC BY 4.0 · Berg et al. · 2026-06-08 데이터 공개 / 2026-09-03 논문 발표</p></dialog>
 <script src="./launch.js"></script>
 </body></html>

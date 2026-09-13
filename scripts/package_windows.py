@@ -14,10 +14,11 @@ def main():
     dist = ROOT / 'artifacts' / 'windows'
     subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--onedir',
         '--name', 'Neurons', '--collect-all', 'ddgs', '--collect-all', 'primp', '--collect-all', 'lxml',
+        '--collect-all', 'psycopg', '--collect-all', 'psycopg_binary',
         '--distpath', str(dist), '--workpath', str(ROOT / '.runtime' / 'build'),
         '--specpath', str(ROOT / '.runtime'), str(ROOT / 'app.py')], cwd=ROOT, check=True)
     package = dist / 'Neurons'
-    for filename in ('start.ps1', 'Run Neurons.cmd', 'README.md', 'NOTICE.md', 'original-data-verification.json'):
+    for filename in ('start.ps1', 'Run Neurons.cmd', 'Configure PostgreSQL.cmd', 'README.md', 'NOTICE.md', 'original-data-verification.json'):
         shutil.copy2(ROOT / filename, package / filename)
     for folder in ('web', 'docs'):
         shutil.copytree(ROOT / folder, package / folder, dirs_exist_ok=True)
@@ -37,10 +38,12 @@ def main():
     if python_license.exists():
         shutil.copy2(python_license, licenses / 'Python-LICENSE.txt')
     for metadata in site.glob('*.dist-info'):
-        if metadata.name.lower().startswith(('numpy-', 'scipy-', 'pyinstaller-', 'pyinstaller_hooks_', 'altgraph-', 'pefile-', 'packaging-', 'ddgs-', 'primp-', 'lxml-', 'click-')):
+        if metadata.name.lower().startswith(('numpy-', 'scipy-', 'pyinstaller-', 'pyinstaller_hooks_', 'altgraph-', 'pefile-', 'packaging-', 'ddgs-', 'primp-', 'lxml-', 'click-', 'psycopg-', 'psycopg_binary-')):
             shutil.copytree(metadata, licenses / metadata.name, dirs_exist_ok=True)
     forbidden = [p for p in package.rglob('*') if p.is_file() and
-                 (p.suffix in ('.gguf', '.sqlite3') or p.name.endswith(('.sqlite3-wal', '.sqlite3-shm')) or 'ollama' in p.parts)]
+                 (p.suffix in ('.gguf', '.sqlite3') or p.name.endswith(('.sqlite3-wal', '.sqlite3-shm'))
+                  or p.name.startswith(('database-pending', 'database-config', 'database.json', 'state-'))
+                  or any(part in ('.runtime', 'individuals', 'ollama') for part in p.relative_to(package).parts))]
     if forbidden:
         raise RuntimeError('Unexpected user database or LLM files in package')
     archive = ROOT / 'artifacts' / 'Neurons-Windows-x64.zip'

@@ -14,14 +14,20 @@ from scipy.sparse import load_npz
 
 
 class Simulation:
-    def __init__(self, directory: Path):
-        self.manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
-        self.neurons = json.loads((directory / 'neurons.json').read_text(encoding='utf-8'))
-        self.ids = np.load(directory / 'ids.npy')
-        self.positions = np.load(directory / 'positions.npy')
-        self.location_kind = np.load(directory / 'location-kind.npy')
-        self.graph = load_npz(directory / 'connections.npz')  # rows pre, columns post
-        self.incoming = self.graph.tocsc()
+    def __init__(self, directory: Path = None, *, shared=None, threaded=True):
+        if shared is None:
+            self.manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
+            self.neurons = json.loads((directory / 'neurons.json').read_text(encoding='utf-8'))
+            self.ids = np.load(directory / 'ids.npy')
+            self.positions = np.load(directory / 'positions.npy')
+            self.location_kind = np.load(directory / 'location-kind.npy')
+            self.graph = load_npz(directory / 'connections.npz')  # rows pre, columns post
+            self.incoming = self.graph.tocsc()
+        else:
+            # Only anatomy is shared. Voltage, spikes, delays and input state are
+            # allocated below for every individual; the graph is never trained here.
+            for name in ('manifest', 'neurons', 'ids', 'positions', 'location_kind', 'graph', 'incoming'):
+                setattr(self, name, getattr(shared, name))
         self.n = len(self.ids)
         self.id_index = {int(identifier): index for index, identifier in enumerate(self.ids)}
         self.classes = sorted(set(n['class'] for n in self.neurons))
@@ -51,8 +57,10 @@ class Simulation:
         self.sensory_indices = np.flatnonzero(np.array([n['class'] == 'ol_sensory' for n in self.neurons]))[:64]
         self.add_event('dataset', 'MaleCNS v1.0 전체 연결 로드', {
             'neurons': self.n, 'connections': int(self.graph.nnz), 'synaptic_contacts': int(self.graph.sum())})
-        self.thread = threading.Thread(target=self._loop, daemon=True, name='connectome-simulation')
-        self.thread.start()
+        self.thread = None
+        if threaded:
+            self.thread = threading.Thread(target=self._loop, daemon=True, name='connectome-simulation')
+            self.thread.start()
 
     @staticmethod
     def transmitter_sign(name):
@@ -230,4 +238,5 @@ class Simulation:
 
     def close(self):
         self.stop_event.set()
-        self.thread.join(timeout=3)
+        if self.thread:
+            self.thread.join(timeout=3)

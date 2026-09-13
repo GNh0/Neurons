@@ -1,8 +1,11 @@
 import {NeuronSpace} from './space.js';
 import {setupResearch} from './research.js';
+import {setupWorld} from './world.js';
 const $=id=>document.getElementById(id),fmt=n=>Number(n).toLocaleString('ko-KR');
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state=null,space=null,selected=null,view='inspect',toastTimer,searchTimer,selectionSeq=0,chatBusy=false,lastEventId=0;
+let worldLab=null,observedAgent='';
+const observationQuery=()=>observedAgent?'?agent='+encodeURIComponent(observedAgent):'';
 
 async function api(path,body){
   const options=body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};
@@ -13,7 +16,8 @@ function toast(text,error=false){clearTimeout(toastTimer);$('toast').textContent
 function listen(id,handler){$(id).addEventListener('click',async e=>{try{await handler(e);}catch(err){toast(err.message,true);}});}
 function setView(name){
   view=name;
-  for(const key of ['inspect','memory','modules','events','chat','research'])$(key+'Panel').classList.toggle('hidden',key!==name);
+  for(const key of ['inspect','memory','modules','events','chat','research','world'])$(key+'Panel').classList.toggle('hidden',key!==name);
+  worldLab?.setView(name);
   document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===name));
   document.querySelectorAll('[data-dock]').forEach(b=>b.classList.toggle('active',b.dataset.dock===name));
   if(name==='memory')loadMemories();if(name==='modules'){renderModules();refreshModel();}if(name==='events')renderEvents();
@@ -28,7 +32,7 @@ function renderState(next){
   $('activeCount').textContent=fmt(next.active_neurons);$('spikeCount').textContent=fmt(next.total_spikes);
   $('simTime').innerHTML=`${(next.sim_ms/1000).toFixed(3)} <span>s</span>`;
   $('playBtn').innerHTML=next.running?'<span>Ⅱ</span> 일시정지':'<span>▶</span> 시뮬레이션 실행';
-  $('runStatus').textContent=next.running?'전체 뉴런 계산 중':next.ticks?'시뮬레이션 일시정지':'자극을 기다리는 중';
+  $('runStatus').textContent=observedAgent?(next.running?'개체 신경 활동 계산 중':'개체 신경 상태 관측'):next.running?'전체 뉴런 계산 중':next.ticks?'시뮬레이션 일시정지':'자극을 기다리는 중';
   $('speed').textContent=next.simulation_speed?`${next.simulation_speed.toFixed(2)} ×`:'—';
   $('latency').textContent=next.step_wall_ms?`${next.step_wall_ms.toFixed(1)} ms`:'—';
   drawChart(next.history);if(view==='events'&&next.events[0]?.id!==lastEventId)renderEvents();
@@ -43,7 +47,7 @@ function drawChart(data){
   ctx.strokeStyle='#73d7b6';ctx.lineWidth=1.3;ctx.stroke();ctx.lineTo(w,h);ctx.lineTo(0,h);ctx.closePath();const fill=ctx.createLinearGradient(0,0,0,h);fill.addColorStop(0,'#5fd5ae33');fill.addColorStop(1,'#5fd5ae00');ctx.fillStyle=fill;ctx.fill();
 }
 async function selectNeuron(identifier,byIndex=false,focus=false){
-  const seq=++selectionSeq,node=await api(`/api/${byIndex?'index':'neuron'}/${identifier}`);if(seq!==selectionSeq)return;
+  const seq=++selectionSeq,node=await api(`/api/${byIndex?'index':'neuron'}/${identifier}`+observationQuery());if(seq!==selectionSeq)return;
   selected=node;space.select(node,focus);setView('inspect');renderNeuron();updateRenderCount();
 }
 function renderNeuron(){
@@ -56,6 +60,8 @@ function renderNeuron(){
   ${n.outgoing.slice(0,10).map(e=>`<button class="connection-row" data-neuron="${e.id}"><span>↗ ${escape(e.name)}</span><small>${fmt(e.contacts)} 접촉</small></button>`).join('')||'<p class="caption">선택 집합 내 출력 연결이 없습니다.</p>'}
   <p class="caption">상위 10개 연결 표시. 연결망 보기에서는 입력·출력 각각 최대 180개를 표시합니다.</p>`;
   listen('stimulateSelected',async()=>{await api('/api/stimulate',{ids:[n.id]});toast(`${n.name}에 12 mV 시험 자극을 보냈습니다.`);});
+  $('stimulateSelected').disabled=!!observedAgent;
+  if(observedAgent)$('stimulateSelected').textContent='감각 입력은 개체의 세계에서 전달됩니다';
   listen('focusConnections',()=>{space.select(n,true);updateRenderCount();toast('선택 뉴런의 주요 입력·출력 연결을 표시합니다.');});
   $('neuronDetail').querySelectorAll('[data-neuron]').forEach(b=>b.addEventListener('click',()=>selectNeuron(b.dataset.neuron,false,true).catch(e=>toast(e.message,true))));
 }
@@ -106,14 +112,22 @@ listen('aboutBtn',()=>{const m=state.model;$('modelFacts').innerHTML=`<b>${escap
 listen('closeAbout',()=>$('aboutDialog').close());
 
 async function poll(){
-  try{const [next,response]=await Promise.all([api('/api/state'),fetch('/api/activity')]);renderState(next);if(response.ok)space.updateActivity(new Uint8Array(await response.arrayBuffer()));}
+  try{const agent=observedAgent,query=observationQuery();const [next,response]=await Promise.all([api('/api/state'+query),fetch('/api/activity'+query)]);if(agent===observedAgent){renderState(next);if(response.ok)space.updateActivity(new Uint8Array(await response.arrayBuffer()));}}
   catch(e){$('runStatus').textContent='서버 연결 대기';}
   setTimeout(poll,350);
 }
 async function pollSelection(){
-  if(selected&&view==='inspect')try{const id=selected.id,n=await api('/api/neuron/'+id);if(selected?.id===id){selected=n;if($('nodeVoltage'))$('nodeVoltage').innerHTML=`${n.voltage.toFixed(1)} <span style="font-size:10px">mV</span>`;if($('nodeSpikes'))$('nodeSpikes').textContent=fmt(n.spikes);}}catch{}
+  if(selected&&view==='inspect')try{const id=selected.id,agent=observedAgent,n=await api('/api/neuron/'+id+observationQuery());if(selected?.id===id&&agent===observedAgent){selected=n;if($('nodeVoltage'))$('nodeVoltage').innerHTML=`${n.voltage.toFixed(1)} <span style="font-size:10px">mV</span>`;if($('nodeSpikes'))$('nodeSpikes').textContent=fmt(n.spikes);}}catch{}
   setTimeout(pollSelection,1000);
 }
+function observeIndividual(id){
+  observedAgent=id;$('observationAgent').value=id;selectionSeq++;
+  for(const key of ['playBtn','stepBtn','visualBtn'])$(key).disabled=!!id;
+  $('observationNote').textContent=id?'이 개체의 독립된 막전위와 발화입니다. 실행은 개체와 세계에서 제어합니다.':'원본 연결을 사용하는 시험 시뮬레이션입니다.';
+  $('brainMapBtn').click();
+  if(selected)selectNeuron(selected.id).catch(e=>toast(e.message,true));
+}
+$('observationAgent').addEventListener('change',()=>observeIndividual($('observationAgent').value));
 async function init(){
   try{
     const next=await api('/api/state');renderState(next);
@@ -121,8 +135,11 @@ async function init(){
     if(!s.ok||!e.ok)throw Error('지도 데이터를 불러오지 못했습니다.');
     space=new NeuronSpace($('space'),index=>selectNeuron(index,true).catch(e=>toast(e.message,true)),label=>$('frameCount').textContent=label);
     space.load(new Float32Array(await s.arrayBuffer()),next.classes,new Uint32Array(await e.arrayBuffer()));
-    $('loading').classList.add('hidden');updateRenderCount();await selectNeuron(10001);await refreshModel();poll();pollSelection();
+    $('loading').classList.add('hidden');updateRenderCount();await selectNeuron(10001);poll();pollSelection();
     setupResearch({api,space,toast,showPanel:setView});
+    worldLab=setupWorld({api,toast,showPanel:setView,observe:observeIndividual});
+    worldLab.setView(view);
+    refreshModel().catch(error=>toast(error.message,true));
   }catch(error){$('loading').innerHTML=`<b>관측실을 열지 못했습니다.</b><span>${escape(error.message)}</span>`;console.error(error);}
 }
 init();

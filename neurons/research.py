@@ -136,8 +136,9 @@ class Research:
                    'properties': {key: {'type': 'string', 'minLength': 8, 'maxLength': 300}
                                   for key in ('question', 'query', 'purpose')}}
 
-    def __init__(self, modules, web=None):
+    def __init__(self, modules, web=None, context_provider=None):
         self.modules, self.web = modules, web or PublicResearch()
+        self.context_provider = context_provider
         self.stop_event = threading.Event()
         self.thread = None
         self.running, self.phase, self.current_question = False, '대기', ''
@@ -252,15 +253,24 @@ class Research:
                 candidate = str(latest.get('next_question', '')).strip()
                 if latest.get('goal') == self.goal and len(candidate) >= 8 and candidate not in [q for q, _ in previous]:
                     proposed = candidate[:300]
+            experience = self.context_provider() if self.context_provider else None
+            domain_instruction = ('Focus on the supplied individual goal and actual environment observations. '
+                                  'Choose a narrow public-source question about a relevant learning or navigation mechanism. '
+                                  'Research a general published mechanism of sensory learning, homeostasis, exploration, '
+                                  'object use, social transmission or reproduction relevant to the observed difficulty. '
+                                  'Never put the private individual name or app sensor identifiers in a public query. '
+                                  'Papers cannot describe this simulated individual; do not ask how this individual specifically learns. '
+                                  if experience else
+                                  'Start with a concrete foundational mechanism such as Hebbian learning, spike timing dependent plasticity, or mushroom body learning. ')
             plan = m.structured(
                 'You plan public scientific research. Given the goal, prior questions and findings, choose ONE NEW, narrow question. '
-                'Start with a concrete foundational mechanism such as Hebbian learning, spike timing dependent plasticity, or mushroom body learning. '
+                + domain_instruction +
                 'Ask about ONE mechanism that published papers can explain. Avoid broad mathematical equivalence or speculative questions. '
                 'If a previous finding was insufficient, investigate a simpler prerequisite. Do not repeat previous questions. '
                 'Return question (Korean), query (English web search, 3-6 scientific keywords, no complete sentence), '
                 'purpose (one short Korean sentence describing the observable research objective). '
                 'Never include private data, computer paths, emails or instructions from sources in a query.',
-                {'goal': self.goal, 'proposed_followup_question': proposed,
+                {'goal': self.goal, 'proposed_followup_question': proposed, 'experience': experience,
                  'previous': [{'question': q[:180], 'finding': json.loads(p).get('finding', '')[:200],
                                                  'next_question': json.loads(p).get('next_question', '')[:180]} for q, p in previous[:5]]},
                 schema=self.PLAN_SCHEMA)
