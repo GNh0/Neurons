@@ -78,6 +78,7 @@ def make_handler(simulation, modules):
                                      extra={'Content-Disposition': 'attachment; filename="neurons-observation.json"'})
                 static_files = {'/': ('index.html', 'text/html; charset=utf-8'),
                                 '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
+                                '/launch.js': ('launch.js', 'text/javascript; charset=utf-8'),
                                 '/space.js': ('space.js', 'text/javascript; charset=utf-8'),
                                 '/style.css': ('style.css', 'text/css; charset=utf-8')}
                 if path in static_files:

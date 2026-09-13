@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ko">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Neurons — CNS Observatory</title><link rel="stylesheet" href="/style.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Neurons — CNS Observatory</title><link rel="stylesheet" href="./style.css"></head>
 <body>
 <header class="topbar">
   <a class="brand" href="/" aria-label="Neurons 관측실"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 24V8L24 24V8"/><circle cx="8" cy="8" r="3"/><circle cx="24" cy="24" r="3"/></svg><span>NEURONS<small>CNS OBSERVATORY</small></span></a>
@@ -59,5 +59,5 @@
 <footer class="activity-bar"><div class="activity-label"><i></i><span>NETWORK ACTIVITY<small id="runStatus">자극을 기다리는 중</small></span></div><canvas id="activityChart" aria-label="최근 뉴런 발화량 그래프"></canvas><div class="activity-stat"><small>누적 발화</small><b id="spikeCount">0</b></div><div class="activity-stat"><small>계산 속도</small><b id="speed">—</b></div><div class="activity-stat"><small>단계 지연</small><b id="latency">—</b></div></footer>
 <div id="toast" role="status" class="toast hidden"></div>
 <dialog id="aboutDialog"><button class="dialog-close" id="closeAbout" aria-label="정보 닫기">×</button><span class="eyebrow">MODEL & PROVENANCE</span><h2>지도가 알려주는 것</h2><p>실제 MaleCNS v1.0 연결표 위에서 단순화된 LIF 뉴런 모델을 계산합니다. 뇌와 복측신경삭의 분류된 뉴런 166,700개가 모두 계산에 포함됩니다.</p><div id="modelFacts"></div><h3>지도 표현</h3><p>점은 세포체 또는 세포체 연결부 위치입니다. 선은 연결된 뉴런의 위치를 잇습니다. 개별 시냅스의 정확한 접촉 좌표나 수상돌기 형태는 이 화면에 로드되지 않았습니다. 전체 보기의 선은 표시용 표본이며, 계산 그래프는 표본화하지 않습니다.</p><h3>학습과 대화</h3><p>학습은 별도 인공 기억 모듈에 저장됩니다. 언어모델은 이 기억과 시뮬레이션 상태를 읽어 답합니다. 생물학적 시냅스의 학습, 자기 성장, 의식이 입증된 시스템을 의미하지 않습니다.</p><div class="source-links"><a href="https://male-cns.janelia.org/download/" target="_blank" rel="noreferrer">MaleCNS 원본 데이터 ↗</a><a href="https://doi.org/10.1016/j.cell.2026.08.015" target="_blank" rel="noreferrer">Cell 논문 ↗</a></div><p class="caption">데이터 CC BY 4.0 · Berg et al. · 2026-06-08 데이터 공개 / 2026-09-03 논문 발표</p></dialog>
-<script type="module" src="/app.js"></script>
+<script src="./launch.js"></script>
 </body></html>

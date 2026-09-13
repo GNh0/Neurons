@@ -17,6 +17,8 @@ MaleCNS v1.0의 실제 초파리 중추신경계 연결 데이터를 불러오�
 
 모니터링과 뉴런 자극 실험은 LLM 없이 실행됩니다. 대화에는 [Ollama](https://ollama.com/download/windows)를 설치하고 로컬 모델을 받으세요.
 
+`web/index.html`을 직접 여는 것은 앱 실행이 아닙니다. 이 경우 실행 안내 화면이 표시됩니다. 반드시 Run Neurons.cmd 또는 start.ps1을 사용하세요.
+
 ```powershell
 ollama pull qwen3.5:4b
 ```
