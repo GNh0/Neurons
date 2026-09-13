@@ -41,9 +41,18 @@ def initialize(body, rng=None, parents=(), tick=0, sex=None):
 
 
 def ready(body):
-    return (body.get('alive', True) and body.get('stage', 'adult') == 'adult'
-            and body.get('cooldown', 0) == 0 and body['energy'] >= 60
-            and body.get('hydration', 100) >= 50 and body.get('health', 100) >= 60)
+    return not reproduction_blockers(body)
+
+
+def reproduction_blockers(body):
+    reasons = []
+    if not body.get('alive', True): reasons.append('생애 종료')
+    if body.get('stage', 'adult') != 'adult': reasons.append('성체가 아님')
+    if body.get('cooldown', 0) > 0: reasons.append(f"번식 후 회복 {body['cooldown']}턴")
+    if body['energy'] < 60: reasons.append(f"에너지 {body['energy']:.1f} / 필요 60")
+    if body.get('hydration', 100) < 50: reasons.append(f"수분 {body.get('hydration', 100):.1f} / 필요 50")
+    if body.get('health', 100) < 60: reasons.append(f"건강 {body.get('health', 100):.1f} / 필요 60")
+    return reasons
 
 
 def compatible(a, b):

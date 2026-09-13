@@ -11,10 +11,11 @@ import threading
 import time
 import numpy as np
 from scipy.sparse import load_npz
+from neurons.plasticity import PairPlasticity
 
 
 class Simulation:
-    def __init__(self, directory: Path = None, *, shared=None, threaded=True):
+    def __init__(self, directory: Path = None, *, shared=None, threaded=True, plastic=False):
         if shared is None:
             self.manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
             self.neurons = json.loads((directory / 'neurons.json').read_text(encoding='utf-8'))
@@ -25,7 +26,7 @@ class Simulation:
             self.incoming = self.graph.tocsc()
         else:
             # Only anatomy is shared. Voltage, spikes, delays and input state are
-            # allocated below for every individual; the graph is never trained here.
+            # allocated below for every individual. Anatomical counts stay fixed.
             for name in ('manifest', 'neurons', 'ids', 'positions', 'location_kind', 'graph', 'incoming'):
                 setattr(self, name, getattr(shared, name))
         self.n = len(self.ids)
@@ -35,6 +36,7 @@ class Simulation:
         self.class_counts = Counter(n['class'] for n in self.neurons)
         self.transmitter_counts = Counter(n['neurotransmitter'] for n in self.neurons)
         self.signs = np.array([self.transmitter_sign(n['neurotransmitter']) for n in self.neurons], dtype=np.float32)
+        self.plasticity = PairPlasticity(self.graph, self.signs) if plastic else None
         self.lock = threading.RLock()
         self.stop_event = threading.Event()
         self.running = False
@@ -103,7 +105,7 @@ class Simulation:
         eligible = self.refractory == 0
         transmissions = 0
         if len(delayed):
-            rows = self.graph[delayed]
+            rows = (self.plasticity.graph if self.plasticity else self.graph)[delayed]
             signs = np.repeat(self.signs[delayed], np.diff(rows.indptr))
             signal = np.bincount(rows.indices, weights=rows.data * signs * self.gain, minlength=self.n)
             self.voltage[eligible] += signal[eligible].astype(np.float32)
@@ -203,6 +205,14 @@ class Simulation:
                          'position': self.positions[index].tolist() if self.location_kind[index] else None, 'sign': float(self.signs[index]),
                          'outgoing': self._partners(self.graph.indices[a:b], self.graph.data[a:b], 'out'),
                          'incoming': self._partners(self.incoming.indices[c:d], self.incoming.data[c:d], 'in')})
+            if self.plasticity:
+                for direction in ('outgoing', 'incoming'):
+                    for partner in node[direction]:
+                        source, target = (index, partner['index']) if direction == 'outgoing' else (partner['index'], index)
+                        start, stop = self.graph.indptr[source:source+2]
+                        edge = start + np.searchsorted(self.graph.indices[start:stop], target)
+                        effective = float(self.plasticity.graph.data[edge])
+                        partner.update(effective_weight=effective, gain=effective/partner['contacts'])
             return node
 
     def scene(self):
@@ -229,11 +239,12 @@ class Simulation:
                     'last_transmitted_pairs': self.last_transmissions, 'history': list(self.history),
                     'voltage_history': list(self.voltage_history), 'events': list(self.events)[:45],
                     'classes': self.classes, 'class_counts': dict(self.class_counts), 'nt_counts': dict(self.transmitter_counts),
+                    'internal_learning': self.plasticity.state() if self.plasticity else None,
                     'model': {'name': 'LIF · MaleCNS v1.0', 'dt_ms': self.dt_ms, 'rest_mv': self.rest,
                               'threshold_mv': self.threshold, 'tau_ms': self.tau_ms, 'delay_ms': self.delay_steps * self.dt_ms,
                               'refractory_ms': self.refractory_steps * self.dt_ms, 'gain_mv': self.gain,
                               'zero_fast_effect_neurons': int((self.signs == 0).sum()),
-                              'assumptions': ['선형 시냅스 개수 가중치', '단일 구획 LIF', 'GABA·글루탐산·히스타민 억제 가정',
+                              'assumptions': ['집계 접촉 수 × 개체별 학습 효율' if self.plasticity else '선형 시냅스 개수 가중치', '단일 구획 LIF', 'GABA·글루탐산·히스타민 억제 가정',
                                               '조절성 전달물질·미상은 빠른 전류 효과 0', '배경 발화 없음', '개별 시냅스 상태·수상돌기 생략']}}
 
     def close(self):

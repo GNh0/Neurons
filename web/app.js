@@ -57,7 +57,7 @@ function renderNeuron(){
   <dl class="node-meta"><dt>신경전달물질</dt><dd>${escape(n.neurotransmitter)}</dd><dt>계산 부호</dt><dd>${n.sign>0?'흥분성 (+)':n.sign<0?'억제성 (−)':'빠른 전류 효과 없음'}</dd><dt>위치</dt><dd>${n.position?`${n.position.map(v=>v.toFixed(1)).join(' / ')} µm`:'공개 주석에 좌표 없음'}</dd><dt>위치 유형</dt><dd>${n.position_kind===1?'세포체':n.position_kind===2?'세포체 연결부':'미제공'}</dd><dt>들어오는 연결</dt><dd>${fmt(n.incoming_count)}개 · ${fmt(n.incoming_contacts)} 접촉</dd><dt>나가는 연결</dt><dd>${fmt(n.outgoing_count)}개 · ${fmt(n.outgoing_contacts)} 접촉</dd></dl>
   <button id="stimulateSelected" class="primary full">✦ 선택 뉴런에 자극 보내기</button><button id="focusConnections" class="outline full">이 뉴런의 연결망 보기</button>
   <div class="section-title">주요 출력 연결 <b>${fmt(n.outgoing_count)}</b></div>
-  ${n.outgoing.slice(0,10).map(e=>`<button class="connection-row" data-neuron="${e.id}"><span>↗ ${escape(e.name)}</span><small>${fmt(e.contacts)} 접촉</small></button>`).join('')||'<p class="caption">선택 집합 내 출력 연결이 없습니다.</p>'}
+  ${n.outgoing.slice(0,10).map(e=>`<button class="connection-row" data-neuron="${e.id}"><span>↗ ${escape(e.name)}</span><small>${fmt(e.contacts)} 접촉${e.gain!==undefined?` · 효율 ${e.gain.toFixed(4)}배`:''}</small></button>`).join('')||'<p class="caption">선택 집합 내 출력 연결이 없습니다.</p>'}
   <p class="caption">상위 10개 연결 표시. 연결망 보기에서는 입력·출력 각각 최대 180개를 표시합니다.</p>`;
   listen('stimulateSelected',async()=>{await api('/api/stimulate',{ids:[n.id]});toast(`${n.name}에 12 mV 시험 자극을 보냈습니다.`);});
   $('stimulateSelected').disabled=!!observedAgent;

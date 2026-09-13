@@ -1,8 +1,8 @@
 """Experience-driven spiking action readout; no LLM calls or action scripts.
 
-The original connectome is a fixed LIF reservoir. Added experimental readout
-synapses are trained by a three-factor reward rule. This is NOT biological STDP
-or a claim that every MaleCNS synapse is plastic.
+Added experimental readout synapses use a three-factor reward rule. Individual
+LIF brains also have independent, rate-based internal pair plasticity. Neither
+rule claims to reproduce biological STDP or contact-specific biochemistry.
 """
 import numpy as np
 
@@ -109,6 +109,7 @@ class NeuralAdapter:
         self.input_cells = np.resize(sensory, count*4).reshape(count, 4)
         self.reservoir_pools = [np.arange(i, brain.n, 8) for i in range(8)]
         self.last_input = np.zeros(len(self.feature_names), dtype=np.float32)
+        self.last_counts = np.zeros(brain.n, dtype=np.float32)
 
     def observe(self, sensors):
         stimulus = np.asarray(sensors, dtype=np.float32)
@@ -124,6 +125,7 @@ class NeuralAdapter:
                 brain.voltage[selected[brain.refractory[selected] == 0]] += 12
                 brain.step()
             counts = (brain.spike_counts - before).astype(np.float32)
+            self.last_counts = counts
             sensory = np.clip(counts[self.input_cells].mean(axis=1)/3, 0, 1)
             reservoir = np.array([counts[p].mean()/3 if len(p) else 0 for p in self.reservoir_pools], dtype=np.float32)
             # Opponent population coding removes common activity that otherwise
@@ -133,6 +135,9 @@ class NeuralAdapter:
             directional -= directional.mean(axis=1, keepdims=True)
             sensory[12:14] *= .15
             sensory[14:] *= .5
+            if 'mate_n' in self.sensor_names:
+                start = self.sensor_names.index('mate_n')
+                sensory[start:start+4] -= sensory[start:start+4].mean()
             reservoir *= .1
             self.last_input = np.concatenate([sensory[:14], reservoir, sensory[14:]]).astype(np.float32)
         return self.last_input.copy()

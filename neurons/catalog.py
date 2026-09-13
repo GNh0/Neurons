@@ -38,7 +38,8 @@ EXTRA_SENSORS = ('near_food', 'near_water', 'near_material', 'near_tool', 'near_
                  'unknown_object', 'thirst', 'fatigue', 'health', 'has_wood', 'has_stone', 'has_fiber',
                  'near_peer', 'peer_in_need', 'hunger', 'safety', 'social_drive',
                  'reproduction_drive', 'compatible_peer', 'adult', 'age',
-                 'known_food', 'known_hazard', 'known_water', 'has_food', 'has_hammer', 'has_basket', 'can_craft')
+                 'known_food', 'known_hazard', 'known_water', 'has_food', 'has_hammer', 'has_basket', 'can_craft',
+                 'mate_n', 'mate_e', 'mate_s', 'mate_w')
 
 
 def upgrade_body(body):

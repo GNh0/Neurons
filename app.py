@@ -51,7 +51,7 @@ def make_handler(simulation, modules, research=None, lab=None, lab_error=''):
             try:
                 observed = lab.brain(query['agent'][0]) if lab and query.get('agent') else simulation
                 if path == '/api/health':
-                    return self.send({'ready': True, 'app': 'Neurons', 'version': '0.3.0', 'neurons': simulation.n})
+                    return self.send({'ready': True, 'app': 'Neurons', 'version': '0.4.0', 'neurons': simulation.n})
                 if path == '/api/state':
                     payload = {**observed.state(), **modules.summary()}
                     if lab and query.get('agent'):
@@ -224,7 +224,7 @@ def main():
         print(lab_error, flush=True)
     server = ThreadingHTTPServer(('127.0.0.1', args.port), make_handler(simulation, modules, research, lab, lab_error))
     server.daemon_threads = True
-    print(f'Neurons 0.3.0 | {simulation.n:,} neurons | http://127.0.0.1:{args.port}', flush=True)
+    print(f'Neurons 0.4.0 | {simulation.n:,} neurons | http://127.0.0.1:{args.port}', flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

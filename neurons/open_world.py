@@ -16,6 +16,7 @@ class OpenWorld(Arena):
     CHUNK = 16
     CACHE_LIMIT = 64
     LIMIT = 1_000_000
+    MATE_SENSE_RADIUS = 32
     BIOMES = ('초원', '숲', '돌지대', '습지')
     START_OBJECTS = {(2,4):'berry',(4,3):'water',(5,4):'branch',(6,3):'stone',
                      (7,3):'grass',(3,6):'shelter',(1,5):'mushroom',(8,6):'apple'}
@@ -105,7 +106,34 @@ class OpenWorld(Arena):
         x,y=body['position']
         return [p for p in others if p is not body and p.get('alive',True) and abs(p['position'][0]-x)+abs(p['position'][1]-y)<=2]
 
-    def sense(self,body,others=()):
+    def reproductive_peers(self, body, others):
+        x,y=body['position']
+        return sorted(((abs(p['position'][0]-x)+abs(p['position'][1]-y),p) for p in others
+                       if p is not body and life.compatible(body,p)
+                       and abs(p['position'][0]-x)+abs(p['position'][1]-y)<=self.MATE_SENSE_RADIUS),
+                      key=lambda pair:pair[0])
+
+    def reproduction_status(self,body,others=(),can_reproduce=True):
+        reasons=life.reproduction_blockers(body)
+        candidates=self.reproductive_peers(body,others)
+        close=[p for d,p in candidates if d<=2]
+        if not can_reproduce: reasons.append('개체 수 한도 도달')
+        if not reasons and not close:
+            reasons.append(f'감지한 짝까지 {candidates[0][0]}칸 · 2칸 이내 접근 필요' if candidates
+                           else f'감지 범위 {self.MATE_SENSE_RADIUS}칸에 번식 가능한 짝이 없음')
+        return dict(ready=not reasons,body_ready=life.ready(body),blockers=reasons,
+                    drive=life.drives(body)['reproduction'],
+                    inherited_strength=min(1.,body['genome']['reproductive_drive']*.65),
+                    sensed_mates=len(candidates),nearby_mates=len(close),
+                    nearest_distance=candidates[0][0] if candidates else None,
+                    sense_radius=self.MATE_SENSE_RADIUS,can_reproduce=can_reproduce)
+
+    def allowed_actions(self,body,others=(),can_reproduce=True):
+        allowed=[body['stage']=='adult' or i not in (7,9,10,11) for i in range(len(ACTIONS))]
+        allowed[11]=self.reproduction_status(body,others,can_reproduce)['ready']
+        return allowed
+
+    def sense(self,body,others=(),can_reproduce=True):
         upgrade_body(body)
         life.initialize(body)
         x,y=body['position'];distance=self.distance((x,y))
@@ -125,7 +153,7 @@ class OpenWorld(Arena):
         extra += [float(bool(peers)),float(any(p.get('energy',100)<50 or p.get('hydration',100)<50 for p in peers))]
         drives=life.drives(body)
         extra += [drives['hunger'],drives['safety'],drives['social'],drives['reproduction'],
-                  float(any(life.compatible(body,p) for p in peers)),float(body['stage']=='adult'),
+                  float(can_reproduce and any(life.compatible(body,p) for p in peers)),float(body['stage']=='adult'),
                   min(1.,body['age']/body['genome']['lifespan'])]
         learned=body['knowledge'].get(obj,{}).get('properties',{})
         extra += [float(learned.get('nutrition',0)>0 and not learned.get('damage')),
@@ -133,6 +161,11 @@ class OpenWorld(Arena):
                   float(any(n>0 and k in OBJECTS and OBJECTS[k]['kind']=='food' for k,n in body['inventory'].items())),
                   float(body['inventory'].get('hammer',0)>0),float(body['inventory'].get('basket',0)>0),
                   float(any(all(body['inventory'].get(k,0)>=n for k,n in r['needs'].items()) for r in RECIPES))]
+        mates=self.reproductive_peers(body,others) if can_reproduce else []
+        if mates:
+            distance,mate=mates[0];mx,my=mate['position']
+            extra += [float(np.clip(.5+.45*(distance-(abs(mx-x-dx)+abs(my-y-dy))),0,1)) for dx,dy in MOVES]
+        else: extra += [0.]*4
         return np.array(smell+free+novel+[body['energy']/100,1]+extra,dtype=np.float32)
 
     def act(self,body,action,goal,others=(),can_reproduce=True):
@@ -151,6 +184,8 @@ class OpenWorld(Arena):
             water_at,water=self.target(body,('liquid',))
             if water:at,obj,item=water_at,water,OBJECTS[water]
         old_distance=self.distance(before)
+        mating_before=self.reproduction_status(body,others,can_reproduce)
+        mates=self.reproductive_peers(body,others) if can_reproduce else []
         result=dict(reward=0.,collision=False,food=False,new_place=False,position_before=before,
                     position_after=before,action_name=ACTIONS[action]['name'],observation='',success=False)
         discovery=material_gain=crafting=social=recovery=0.
@@ -248,12 +283,19 @@ class OpenWorld(Arena):
             if mate and can_reproduce:
                 result.update(success=True,reproduction_peer=mate['individual_id'],observation='짝짓기 · 자손의 알 생성')
                 social=2*body['genome']['reproductive_drive']
-            else:result['observation']='개체 수 제한으로 번식 대기' if not can_reproduce else '번식 조건 또는 가까운 짝이 없음'
+            else:result['observation']=' · '.join(mating_before['blockers'])
         reward=discovery+material_gain+crafting+social*body['genome']['sociality']+recovery-.025-.65*result['collision']
         reward-=.12*life.drives(body)['hunger']+.12*life.drives(body)['thirst']
         if goal=='forage':reward+=.2*(old_distance-self.distance(body['position']))+int(result['food'])
         elif goal=='explore':reward+=.5*result['new_place']+.5*discovery
         elif goal=='cooperate':reward+=social+crafting
+        approach=0.
+        if action<4 and mates:
+            previous,mate=mates[0]
+            distance=sum(abs(x-y) for x,y in zip(body['position'],mate['position']))
+            approach=.35*mating_before['drive']*(min(self.MATE_SENSE_RADIUS,previous)-min(self.MATE_SENSE_RADIUS,distance))
+            reward+=approach
+        result.update(reproduction=mating_before,mate_approach_reward=approach)
         if not result['success']:reward-=.08
         if body['health']<=0:
             reward-=4

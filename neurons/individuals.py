@@ -26,12 +26,13 @@ class Individual:
         self.description = description or GOALS[goal]['description']
         self.directory = Path(directory)/identifier
         self.directory.mkdir(parents=True, exist_ok=True)
-        self.brain = Simulation(shared=template, threaded=False)
+        self.brain = Simulation(shared=template, threaded=False, plastic=True)
         self.adapter = NeuralAdapter(self.brain, seed, EXTRA_SENSORS)
         self.policy = SpikingPolicy(len(self.adapter.feature_names), seed, [a['id'] for a in ACTIONS])
         self.body = life.initialize(upgrade_body(fresh_body()), np.random.default_rng(seed))
         self.body['individual_id'] = identifier
         self.policy.learning_rate = self.body['genome']['learning_rate']
+        self.brain.plasticity.learning_rate = .02*self.policy.learning_rate/.12
         self.active, self.learning, self.llm_enabled = True, True, False
         self.memories = Modules(self.directory, self.brain)
         self.memories.llm_lock = llm_lock  # Share model scheduling, never memory.
@@ -57,6 +58,7 @@ class Individual:
                 'knowledge': {key:{k:v for k,v in value.items() if k in ('name','position','learned_by','teacher')}
                               for key,value in self.body['knowledge'].copy().items()},
                 'available_actions': ACTIONS,
+                'internal_learning': self.internal_state(),
                 'learning_enabled': self.learning, 'neural_learning': {k:measured[k] for k in
                      ('kind','action_neurons','plastic_synapses','changed_synapses','weight_change_l1','updates','probabilities')},
                 'recent_experiences': [{k:v for k,v in event.items() if k in
@@ -79,13 +81,15 @@ class Individual:
     def checkpoint(self):
         token = uuid.uuid4().hex
         path = self.directory/('state-'+token+'.npz')
+        plasticity = self.brain.plasticity.checkpoint(self.directory)
         np.savez_compressed(path, voltage=self.brain.voltage, refractory=self.brain.refractory,
                             spike_counts=self.brain.spike_counts, activity=self.brain.activity,
                             delay0=self.brain.delay_queue[0], delay1=self.brain.delay_queue[1],
                             weights=self.policy.weights, eligibility=self.policy.eligibility,
                             action_spikes=self.policy.action_spikes, policy_voltage=self.policy.voltage,
-                            policy_probabilities=self.policy.probabilities)
-        return {**self.metadata(), 'checkpoint': path.name}
+                            policy_probabilities=self.policy.probabilities,
+                            pair_rate_average=self.brain.plasticity.rate_average)
+        return {**self.metadata(), 'checkpoint': path.name, 'plasticity':plasticity}
 
     def restore(self, state):
         if state['base_neurons'] != self.brain.n or state['base_pairs'] != self.brain.graph.nnz:
@@ -107,9 +111,12 @@ class Individual:
             self.policy.voltage[col_map] = data['policy_voltage']
             self.policy.probabilities.fill(0)
             self.policy.probabilities[col_map] = data['policy_probabilities']
+            self.brain.plasticity.restore(state.get('plasticity'), self.directory,
+                data['pair_rate_average'] if 'pair_rate_average' in data else np.zeros(self.brain.n,dtype=np.float32))
         self.body = life.initialize(upgrade_body(state['body']),np.random.default_rng(int(self.id[:8],16)))
         self.body['individual_id'] = self.id
         self.policy.learning_rate = self.body['genome']['learning_rate']
+        self.brain.plasticity.learning_rate = .02*self.policy.learning_rate/.12
         self.active, self.learning, self.llm_enabled = (state[k] for k in ('active', 'learning', 'llm_enabled'))
         self.policy.baseline, self.policy.updates = state['baseline'], state['updates']
         self.policy.last_error = state.get('reward_prediction_error', 0)
@@ -121,6 +128,12 @@ class Individual:
         self.experiences.extend(state.get('experiences', []))
         self.recent.extend(state.get('recent', []))
 
+    def internal_state(self):
+        state=self.brain.plasticity.state()
+        for edge in state['examples']:
+            edge.update(source_id=int(self.brain.ids[edge['source']]),target_id=int(self.brain.ids[edge['target']]))
+        return state
+
     def state(self, detail=False):
         result = {'id': self.id, 'name': self.name, 'goal': self.goal, 'goal_name': GOALS[self.goal]['name'],
                   'description': self.description, 'active': self.active, 'learning': self.learning,
@@ -131,6 +144,7 @@ class Individual:
                   'action': self.body['last_action'], 'reward': self.body['last_reward'],
                   'brain_neurons': self.brain.n, 'brain_ms': self.brain.ticks,
                   'brain_spikes': self.brain.total_spikes, 'neural_learning': self.policy.state(),
+                  'internal_learning': self.internal_state(),
                   'replay_updates': self.replay_updates, 'lesson_status': self.lesson_status,
                   'life': life.public(self.body), 'hydration': round(self.body['hydration'],2),
                   'health': round(self.body['health'],2), 'fatigue': round(self.body['fatigue'],2),
@@ -214,6 +228,7 @@ class IndividualLab:
                                           tick=self.world.ticks,sex='female' if len(self.individuals)%2 else 'male')
             person.body['individual_id'] = person.id
             person.policy.learning_rate = person.body['genome']['learning_rate']
+            person.brain.plasticity.learning_rate = .02*person.policy.learning_rate/.12
             self._event(person.id,{'kind':'founder','observation':'성체 개체 생성','generation':0})
             self.save()
             return person.state()
@@ -297,8 +312,9 @@ class IndividualLab:
 
     def _act(self,person,enabled):
         others=[p.body for p in enabled if p.body['alive']]
-        neural = person.adapter.observe(self.world.sense(person.body,others))
-        allowed=[person.body['stage']=='adult' or i not in (7,9,10,11) for i in range(len(ACTIONS))]
+        can_reproduce=len(self.individuals)<self.MAX_POPULATION
+        neural = person.adapter.observe(self.world.sense(person.body,others,can_reproduce))
+        allowed=self.world.allowed_actions(person.body,others,can_reproduce)
         action = person.policy.choose(neural,allowed=allowed)
         probability = float(person.policy.probabilities[action])
         result = self.world.act(person.body, action, person.goal, others, len(self.individuals)<self.MAX_POPULATION)
@@ -308,11 +324,15 @@ class IndividualLab:
         if result.get('death'):
             self._event(person.id,result['death'])
         change = person.policy.learn(result['reward'], person.learning)
+        with person.brain.lock:
+            internal_change=person.brain.plasticity.learn(person.adapter.last_counts,10,
+                                                         person.policy.last_error,person.learning)
         experience = {**result, 'goal': person.goal, 'action': action, 'activity': neural.tolist(),
-                      'probability': probability, 'step': person.body['steps'],'allowed':allowed,'world_tick':self.world.ticks}
+                      'probability': probability, 'step': person.body['steps'],'allowed':allowed,'world_tick':self.world.ticks,
+                      'internal_change':internal_change}
         person.experiences.append(experience)
         brief = {**result, 'step': person.body['steps'], 'reward': result['reward'], 'total_food': person.body['food'],
-                 'places': len(person.body['visits']), 'weight_change': change, 'action': action,
+                 'places': len(person.body['visits']), 'weight_change': change, 'internal_change':internal_change, 'action': action,
                  'position': person.body['position'], 'kind': 'experience'}
         person.recent.append(brief)
         self._event(person.id, experience | {'kind': 'experience', 'weight_change': change})
@@ -334,6 +354,7 @@ class IndividualLab:
                                    (parent.body,mate.body),self.world.ticks)
         child.body['individual_id']=child.id
         child.policy.learning_rate=child.body['genome']['learning_rate']
+        child.brain.plasticity.learning_rate=.02*child.policy.learning_rate/.12
         for p in (parent,mate):
             p.body['energy']-=20;p.body['hydration']-=10;p.body['cooldown']=600;p.body['offspring']+=1
             self._event(p.id,{'kind':'reproduction','child_id':identifier,'parents':child.body['parents'],
@@ -461,10 +482,11 @@ class IndividualLab:
         # Only superseded checkpoints in this generated individual's own folder.
         # The database now points at the new complete generation; retain one prior.
         for person in self.individuals.values():
-            files = sorted(person.directory.glob('state-*.npz'), key=lambda p: p.stat().st_mtime, reverse=True)
-            for old in files[2:]:
-                if old.resolve().parent == person.directory.resolve():
-                    old.unlink()
+            for pattern in ('state-*.npz','pair-*.npy'):
+                files = sorted(person.directory.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+                for old in files[2:]:
+                    if old.resolve().parent == person.directory.resolve():
+                        old.unlink()
         for person in self.retired[:]:
             if not person.research.running and not (person.lesson_thread and person.lesson_thread.is_alive()):
                 person.brain.close();person.memories.close();self.retired.remove(person)
@@ -493,6 +515,13 @@ class IndividualLab:
                 elif focus in self.archives:center=self.archives[focus]['body']['position']
                 else:center=(4,4)
             living=[p.state() for p in self.individuals.values()]
+            bodies=[p.body for p in self.individuals.values() if p.active and p.body['alive']]
+            for state in living:
+                p=self.individuals[state['id']]
+                state['reproduction']=self.world.reproduction_status(p.body,bodies,len(living)<self.MAX_POPULATION)
+                if not p.active:
+                    state['reproduction']['ready']=False
+                    state['reproduction']['blockers'].insert(0,'개체 활동 일시정지')
             dead=[s['public_state'] for s in self.archives.values()]
             all_people=living+dead
             progress={'living':len(living),'deaths':len(dead),'births':sum(p['life']['generation']>0 for p in all_people),
@@ -510,14 +539,21 @@ class IndividualLab:
                               'readout_synapses_per_agent': (22+len(EXTRA_SENSORS))*len(ACTIONS), 'action_neurons_per_agent': len(ACTIONS),
                               'feature_names':list(NeuralAdapter.SENSOR_NAMES)+['pool_'+str(i) for i in range(8)]+list(EXTRA_SENSORS),
                               'sensor_mapping': '인위적으로 배정한 감각 입력', 'brain_step_ms_per_action': 10,
-                              'learning': '실험 행동 회로의 보상 조절 발화 학습', 'base_weights_changed': False}}
+                              'learning': '내부 연결 효율과 행동 회로의 보상 조절 학습', 'base_weights_changed': False,
+                              'internal_pair_capacity':int(self.template.graph.nnz),
+                              'internal_plasticity':True,'contact_specific_plasticity':False}}
 
     def detail(self, identifier):
         with self.lock:
             if identifier in self.archives:
                 archived=self.archives[identifier]
                 public=archived['public_state'] | {'archived':True,'visits':archived['body']['visits']}
-            else:public=self.individuals[identifier].state(True)
+            else:
+                person=self.individuals[identifier]
+                public=person.state(True)
+                public['reproduction']=self.world.reproduction_status(person.body,
+                    [p.body for p in self.individuals.values() if p.active and p.body['alive']],
+                    len(self.individuals)<self.MAX_POPULATION)
             return {**public, 'events': self._history(identifier),
                     'learning_records': self._history(identifier, 16, only_lessons=True)}
 
